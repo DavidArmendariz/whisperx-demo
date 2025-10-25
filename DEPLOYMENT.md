@@ -6,7 +6,7 @@ This guide walks you through deploying the WhisperX Audio Transcription Service 
 
 - [ ] AWS Account with admin access
 - [ ] AWS CLI installed and configured
-- [ ] Terraform >= 1.6.0 installed
+- [ ] Terraform >= 1.13.4 installed
 - [ ] Docker installed
 - [ ] GitHub repository created
 - [ ] Git installed
@@ -23,14 +23,6 @@ aws s3api put-bucket-versioning \
   --bucket your-terraform-state-bucket \
   --versioning-configuration Status=Enabled
 ```
-
-2. **Enable required AWS services**:
-   - EC2
-   - ECS
-   - AWS Batch
-   - S3
-   - ECR
-   - IAM
 
 ### Step 2: Configure Terraform
 
@@ -80,48 +72,7 @@ terraform apply
 terraform output > ../deployment-outputs.txt
 ```
 
-### Step 4: Build and Push Initial Docker Images
-
-Get ECR repository URLs from Terraform outputs:
-
-```bash
-# Get ECR URLs
-FASTAPI_ECR_URL=$(terraform output -raw ecr_fastapi_repository_url)
-BATCH_ECR_URL=$(terraform output -raw ecr_batch_worker_repository_url)
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-AWS_REGION=us-east-1
-
-# Login to ECR
-aws ecr get-login-password --region $AWS_REGION | \
-  docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-
-# Build and push FastAPI image
-cd ../fastapi-app
-docker build -t $FASTAPI_ECR_URL:latest .
-docker push $FASTAPI_ECR_URL:latest
-
-# Build and push Batch Worker image
-cd ../batch-worker
-docker build -t $BATCH_ECR_URL:latest .
-docker push $BATCH_ECR_URL:latest
-```
-
-### Step 5: Update ECS Task Definition
-
-After pushing the initial images, update the ECS task definition to use the correct image:
-
-```bash
-cd ../terraform
-
-# Force new deployment of ECS service
-aws ecs update-service \
-  --cluster whisperx-demo-cluster \
-  --service whisperx-demo-fastapi-service \
-  --force-new-deployment \
-  --region us-east-1
-```
-
-### Step 6: Configure GitHub Actions
+### Step 4: Configure GitHub Actions
 
 1. **Get the GitHub OIDC Role ARN**:
 
@@ -137,82 +88,6 @@ terraform output -raw github_oidc_role_arn
    - Click "New repository secret"
    - Name: `AWS_ROLE_ARN`
    - Value: (paste the ARN from step 1)
-
-3. **Verify workflows exist**:
-
-```bash
-ls -la ../.github/workflows/
-```
-
-You should see:
-
-- `deploy-terraform.yml`
-- `deploy-fastapi.yml`
-- `deploy-batch-worker.yml`
-
-### Step 7: Test the Deployment
-
-1. **Get the ALB DNS name**:
-
-```bash
-cd terraform
-ALB_DNS=$(terraform output -raw alb_dns_name)
-echo "API URL: http://$ALB_DNS"
-```
-
-2. **Test health endpoint**:
-
-```bash
-curl http://$ALB_DNS/health
-```
-
-Expected response:
-
-```json
-{
-  "status": "healthy",
-  "service": "whisperx-api"
-}
-```
-
-3. **Test transcription** (with a sample audio file):
-
-```bash
-curl -X POST http://$ALB_DNS/transcribe \
-  -F "file=@sample-audio.mp3" \
-  -F "language=es"
-```
-
-4. **Check job status** (use batch_job_id from previous response):
-
-```bash
-curl http://$ALB_DNS/job/<batch-job-id>
-```
-
-### Step 8: Verify AWS Resources
-
-1. **Check ECS Service**:
-
-```bash
-aws ecs describe-services \
-  --cluster whisperx-demo-cluster \
-  --services whisperx-demo-fastapi-service \
-  --region us-east-1
-```
-
-2. **Check Batch Compute Environment**:
-
-```bash
-aws batch describe-compute-environments \
-  --region us-east-1 | grep whisperx-demo
-```
-
-3. **Check S3 Bucket**:
-
-```bash
-S3_BUCKET=$(terraform output -raw s3_bucket_name)
-aws s3 ls s3://$S3_BUCKET/
-```
 
 ## Post-Deployment Configuration
 
