@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 import boto3
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 # Configure logging
@@ -18,6 +18,20 @@ app = FastAPI(
     description="API for uploading audio files and triggering transcription jobs",
     version="1.0.0",
 )
+
+
+# Middleware to filter health check logs
+@app.middleware("http")
+async def filter_health_check_logs(request: Request, call_next):
+    """Don't log health check requests"""
+    response = await call_next(request)
+
+    # Skip logging for health check endpoint
+    if request.url.path != "/health":
+        logger.info(f"{request.method} {request.url.path} - {response.status_code}")
+
+    return response
+
 
 # AWS configuration
 AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")

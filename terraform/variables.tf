@@ -43,7 +43,7 @@ variable "fastapi_memory" {
 variable "fastapi_desired_count" {
   description = "Desired count of FastAPI tasks"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "batch_instance_type" {
