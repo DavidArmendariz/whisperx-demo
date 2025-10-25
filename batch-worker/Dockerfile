@@ -1,5 +1,5 @@
 # Use NVIDIA CUDA base image for GPU support
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:13.0.1-cudnn-runtime-ubuntu24.04
 
 # Set working directory
 WORKDIR /app
@@ -17,8 +17,8 @@ RUN pip3 install --no-cache-dir --upgrade pip
 
 # Install PyTorch with CUDA support
 RUN pip3 install --no-cache-dir \
-  torch==2.1.2 \
-  torchaudio==2.1.2 \
+  torch==2.9.0 \
+  torchaudio==2.9.0 \
   --index-url https://download.pytorch.org/whl/cu121
 
 # Copy requirements and install Python dependencies
