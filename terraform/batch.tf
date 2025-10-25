@@ -25,8 +25,16 @@ resource "aws_launch_template" "batch" {
   }
 
   user_data = base64encode(<<-EOF
+              MIME-Version: 1.0
+              Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
+
+              --==MYBOUNDARY==
+              Content-Type: text/x-shellscript; charset="us-ascii"
+
               #!/bin/bash
               echo ECS_IMAGE_PULL_BEHAVIOR=prefer-cached >> /etc/ecs/ecs.config
+
+              --==MYBOUNDARY==--
               EOF
   )
 
