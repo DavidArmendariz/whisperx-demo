@@ -78,7 +78,7 @@ resource "aws_batch_compute_environment" "main" {
 
 # Batch Job Queue
 resource "aws_batch_job_queue" "main" {
-  name     = "${var.project_name}-job-queue"
+  name     = "${var.project_name}-job-queue-${random_id.queue_suffix.hex}"
   state    = "ENABLED"
   priority = 1
 
@@ -90,6 +90,21 @@ resource "aws_batch_job_queue" "main" {
   tags = {
     Name        = "${var.project_name}-job-queue"
     Environment = var.environment
+  }
+
+  lifecycle {
+    create_before_destroy = true
+    replace_triggered_by = [
+      aws_batch_compute_environment.main
+    ]
+  }
+}
+
+# Random ID for job queue name to avoid conflicts during recreation
+resource "random_id" "queue_suffix" {
+  byte_length = 4
+  keepers = {
+    compute_environment = aws_batch_compute_environment.main.arn
   }
 }
 
