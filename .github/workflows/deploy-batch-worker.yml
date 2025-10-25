@@ -1,0 +1,93 @@
+name: Deploy Batch Worker
+
+on:
+  # Triggered manually or when only batch-worker code changes (not through deploy-all)
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: whisperx-demo-batch-worker
+  BATCH_JOB_DEFINITION: whisperx-demo-whisper-transcription
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Batch Worker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-BatchWorker-Deploy
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd batch-worker
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Get current job definition
+        id: get-job-def
+        run: |
+          aws batch describe-job-definitions \
+            --job-definition-name ${{ env.BATCH_JOB_DEFINITION }} \
+            --status ACTIVE \
+            --query 'jobDefinitions[0]' > current-job-def.json
+
+          cat current-job-def.json
+
+      - name: Update job definition with new image
+        id: update-job-def
+        env:
+          NEW_IMAGE: ${{ steps.build-image.outputs.image }}
+        run: |
+          # Extract necessary fields and update image
+          jq --arg IMAGE "$NEW_IMAGE" '
+            {
+              jobDefinitionName: .jobDefinitionName,
+              type: .type,
+              platformCapabilities: .platformCapabilities,
+              retryStrategy: .retryStrategy,
+              timeout: .timeout,
+              containerProperties: (
+                .containerProperties | 
+                .image = $IMAGE
+              )
+            }
+          ' current-job-def.json > new-job-def.json
+
+          cat new-job-def.json
+
+      - name: Register new job definition revision
+        run: |
+          aws batch register-job-definition --cli-input-json file://new-job-def.json
+
+      - name: Deployment summary
+        run: |
+          echo "### Deployment Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Job Definition**: ${{ env.BATCH_JOB_DEFINITION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "New job definition revision has been registered." >> $GITHUB_STEP_SUMMARY

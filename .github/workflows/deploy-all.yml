@@ -1,0 +1,181 @@
+name: Deploy All Infrastructure and Applications
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "terraform/**"
+      - "batch-worker/**"
+      - "fastapi-app/**"
+      - ".github/workflows/deploy-all.yml"
+      - ".github/workflows/deploy-terraform.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  # First, deploy the Terraform infrastructure
+  terraform:
+    name: Deploy Terraform Infrastructure
+    uses: ./.github/workflows/deploy-terraform.yml
+    secrets: inherit
+
+  # Then deploy both services in parallel
+  deploy-batch-worker:
+    name: Deploy Batch Worker
+    needs: terraform
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPOSITORY: whisperx-demo-batch-worker
+      BATCH_JOB_DEFINITION: whisperx-demo-whisper-transcription
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-BatchWorker-Deploy
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd batch-worker
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Get current job definition
+        id: get-job-def
+        run: |
+          aws batch describe-job-definitions \
+            --job-definition-name ${{ env.BATCH_JOB_DEFINITION }} \
+            --status ACTIVE \
+            --query 'jobDefinitions[0]' > current-job-def.json
+
+          cat current-job-def.json
+
+      - name: Update job definition with new image
+        id: update-job-def
+        env:
+          NEW_IMAGE: ${{ steps.build-image.outputs.image }}
+        run: |
+          # Extract necessary fields and update image
+          jq --arg IMAGE "$NEW_IMAGE" '
+            {
+              jobDefinitionName: .jobDefinitionName,
+              type: .type,
+              platformCapabilities: .platformCapabilities,
+              retryStrategy: .retryStrategy,
+              timeout: .timeout,
+              containerProperties: (
+                .containerProperties | 
+                .image = $IMAGE
+              )
+            }
+          ' current-job-def.json > new-job-def.json
+
+          cat new-job-def.json
+
+      - name: Register new job definition revision
+        run: |
+          aws batch register-job-definition --cli-input-json file://new-job-def.json
+
+      - name: Deployment summary
+        run: |
+          echo "### Batch Worker Deployment Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Job Definition**: ${{ env.BATCH_JOB_DEFINITION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "New job definition revision has been registered." >> $GITHUB_STEP_SUMMARY
+
+  deploy-fastapi:
+    name: Deploy FastAPI
+    needs: terraform
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPOSITORY: whisperx-demo-fastapi
+      ECS_SERVICE: whisperx-demo-fastapi-service
+      ECS_CLUSTER: whisperx-demo-cluster
+      ECS_TASK_DEFINITION: whisperx-demo-fastapi
+      CONTAINER_NAME: fastapi
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-FastAPI-Deploy
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd fastapi-app
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+            --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Deployment summary
+        run: |
+          echo "### FastAPI Deployment Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
