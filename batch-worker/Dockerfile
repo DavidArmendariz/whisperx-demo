@@ -12,9 +12,6 @@ RUN apt-get update && apt-get install -y \
   git \
   && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages
-
 # Install PyTorch with CUDA support
 RUN pip3 install --no-cache-dir \
   torch==2.9.0 \
