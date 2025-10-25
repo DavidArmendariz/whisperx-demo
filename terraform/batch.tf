@@ -87,13 +87,6 @@ resource "aws_batch_job_queue" "main" {
     Name        = "${var.project_name}-job-queue"
     Environment = var.environment
   }
-
-  lifecycle {
-    create_before_destroy = true
-    replace_triggered_by = [
-      aws_batch_compute_environment.main
-    ]
-  }
 }
 
 # Batch Job Definition
