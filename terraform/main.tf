@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "terraform-state-whisperx-demo"
+    bucket = "tf-state-whisperx-demo"
     key    = "whisperx-demo/terraform.tfstate"
     region = "us-east-1"
   }
