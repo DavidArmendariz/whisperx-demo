@@ -46,12 +46,6 @@ variable "fastapi_desired_count" {
   default     = 1
 }
 
-variable "batch_instance_type" {
-  description = "Instance type for Batch jobs"
-  type        = string
-  default     = "g4dn.xlarge"
-}
-
 variable "batch_max_vcpus" {
   description = "Maximum vCPUs for Batch compute environment"
   type        = number

@@ -87,7 +87,6 @@ availability_zones    = ["us-east-1a", "us-east-1b"]
 fastapi_cpu          = 512
 fastapi_memory       = 1024
 fastapi_desired_count = 2
-batch_instance_type  = "g4dn.xlarge"
 batch_max_vcpus      = 16
 ```
 

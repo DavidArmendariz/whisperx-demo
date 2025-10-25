@@ -39,12 +39,16 @@ resource "aws_batch_compute_environment" "main" {
   service_role = aws_iam_role.batch_service.arn
 
   compute_resources {
-    type                = "SPOT"
-    allocation_strategy = "SPOT_CAPACITY_OPTIMIZED"
-    bid_percentage      = 70
+    type                = "EC2"
+    allocation_strategy = "BEST_FIT_PROGRESSIVE"
 
     instance_role = aws_iam_instance_profile.ecs_instance.arn
-    instance_type = [var.batch_instance_type]
+    instance_type = [
+      "g5.xlarge",
+      "g4dn.xlarge",
+      "g4dn.2xlarge",
+      "p3.2xlarge"
+    ]
 
     min_vcpus     = 0
     desired_vcpus = 0
