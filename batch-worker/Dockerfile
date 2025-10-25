@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-  python3.11 \
+  python3 \
   python3-pip \
   ffmpeg \
   git \
