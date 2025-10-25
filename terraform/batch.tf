@@ -44,10 +44,10 @@ resource "aws_batch_compute_environment" "main" {
 
     instance_role = aws_iam_instance_profile.ecs_instance.arn
     instance_type = [
-      "g5.xlarge",
-      "g4dn.xlarge",
-      "g4dn.2xlarge",
-      "p3.2xlarge"
+      "c5.xlarge",
+      "c5.2xlarge",
+      "m5.xlarge",
+      "m5.2xlarge"
     ]
 
     min_vcpus     = 0
@@ -130,10 +130,6 @@ resource "aws_batch_job_definition" "whisper_transcription" {
       {
         type  = "MEMORY"
         value = "8192"
-      },
-      {
-        type  = "GPU"
-        value = "1"
       }
     ]
 
@@ -159,26 +155,6 @@ resource "aws_batch_job_definition" "whisper_transcription" {
         "awslogs-region"        = var.aws_region
         "awslogs-stream-prefix" = "batch"
       }
-    }
-
-    linuxParameters = {
-      devices = [
-        {
-          hostPath      = "/dev/nvidia0"
-          containerPath = "/dev/nvidia0"
-          permissions   = ["READ", "WRITE", "MKNOD"]
-        },
-        {
-          hostPath      = "/dev/nvidiactl"
-          containerPath = "/dev/nvidiactl"
-          permissions   = ["READ", "WRITE", "MKNOD"]
-        },
-        {
-          hostPath      = "/dev/nvidia-uvm"
-          containerPath = "/dev/nvidia-uvm"
-          permissions   = ["READ", "WRITE", "MKNOD"]
-        }
-      ]
     }
   })
 
