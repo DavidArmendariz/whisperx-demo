@@ -13,17 +13,18 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
-RUN pip3 install --no-cache-dir --upgrade pip
+RUN pip3 install --no-cache-dir --upgrade pip --break-system-packages
 
 # Install PyTorch with CUDA support
 RUN pip3 install --no-cache-dir \
   torch==2.9.0 \
   torchaudio==2.9.0 \
-  --index-url https://download.pytorch.org/whl/cu121
+  --index-url https://download.pytorch.org/whl/cu121 \
+  --break-system-packages
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
 
 # Copy worker script
 COPY worker.py .
