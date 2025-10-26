@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 import os
@@ -6,8 +5,7 @@ import sys
 from pathlib import Path
 
 import boto3
-import torch
-import whisperx
+from faster_whisper import WhisperModel
 
 # Configure logging
 logging.basicConfig(
@@ -23,10 +21,10 @@ S3_OUTPUT_KEY = os.getenv("S3_OUTPUT_KEY")
 TARGET_LANGUAGE = os.getenv("TARGET_LANGUAGE", "es")
 JOB_ID = os.getenv("JOB_ID", "unknown")
 
-# WhisperX configuration
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-BATCH_SIZE = 32
-COMPUTE_TYPE = "float16" if DEVICE == "cuda" else "int8"
+# Faster-Whisper configuration
+MODEL_SIZE = "small"  # small, medium, large-v2, large-v3
+DEVICE = "cpu"  # Use CPU since we removed GPU support
+COMPUTE_TYPE = "int8"  # int8 for CPU, float16 for GPU
 
 # Initialize S3 client
 s3_client = boto3.client("s3", region_name=AWS_REGION)
@@ -63,7 +61,7 @@ def upload_transcription_to_s3(bucket: str, key: str, transcription_data: dict):
 
 def transcribe_audio(audio_path: str, language: str = "es") -> dict:
     """
-    Transcribe audio using WhisperX
+    Transcribe audio using faster-whisper
 
     Args:
         audio_path: Path to the audio file
@@ -72,57 +70,64 @@ def transcribe_audio(audio_path: str, language: str = "es") -> dict:
     Returns:
         Dictionary containing transcription results
     """
-    logger.info("Starting transcription with WhisperX")
+    logger.info("Starting transcription with faster-whisper")
     logger.info(f"Device: {DEVICE}, Language: {language}, Compute Type: {COMPUTE_TYPE}")
 
     try:
         # Load model
-        logger.info("Loading Whisper model (small)...")
-        model = whisperx.load_model(
-            "small", device=DEVICE, compute_type=COMPUTE_TYPE, language=language
+        logger.info(f"Loading Whisper model ({MODEL_SIZE})...")
+        model = WhisperModel(
+            MODEL_SIZE,
+            device=DEVICE,
+            compute_type=COMPUTE_TYPE,
+            cpu_threads=8,  # Use all 8 CPU cores
         )
-
-        # Load audio
-        logger.info(f"Loading audio file: {audio_path}")
-        audio = whisperx.load_audio(audio_path)
 
         # Transcribe
         logger.info("Transcribing audio...")
-        result = model.transcribe(audio, batch_size=BATCH_SIZE, language=language)
-
-        logger.info(
-            f"Initial transcription complete. Detected language: {result.get('language', 'unknown')}"
+        segments, info = model.transcribe(
+            audio_path,
+            language=language,
+            beam_size=5,
+            word_timestamps=True,
+            vad_filter=True,  # Voice activity detection
+            vad_parameters=dict(min_silence_duration_ms=500),
         )
 
-        # Clean up model from memory
-        del model
-        gc.collect()
-        torch.cuda.empty_cache() if DEVICE == "cuda" else None
+        logger.info(f"Transcription complete. Detected language: {info.language}")
+        logger.info(f"Language probability: {info.language_probability:.2f}")
 
-        # Align whisper output
-        logger.info("Aligning transcription...")
-        model_a, metadata = whisperx.load_align_model(
-            language_code=language, device=DEVICE
-        )
-        result = whisperx.align(
-            result["segments"],
-            model_a,
-            metadata,
-            audio,
-            DEVICE,
-            return_char_alignments=False,
-        )
+        # Convert generator to list and format segments
+        formatted_segments = []
+        for segment in segments:
+            formatted_segment = {
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip(),
+            }
 
-        logger.info("Alignment complete")
+            # Add word-level timestamps if available
+            if segment.words:
+                formatted_segment["words"] = [
+                    {
+                        "start": word.start,
+                        "end": word.end,
+                        "word": word.word,
+                        "probability": word.probability,
+                    }
+                    for word in segment.words
+                ]
 
-        # Clean up alignment model
-        del model_a
-        gc.collect()
-        torch.cuda.empty_cache() if DEVICE == "cuda" else None
+            formatted_segments.append(formatted_segment)
 
         logger.info("Transcription pipeline complete")
 
-        return result
+        return {
+            "segments": formatted_segments,
+            "language": info.language,
+            "language_probability": info.language_probability,
+            "duration": info.duration,
+        }
 
     except Exception as e:
         logger.error(f"Transcription failed: {str(e)}")
