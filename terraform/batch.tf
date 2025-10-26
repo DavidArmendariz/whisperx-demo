@@ -44,8 +44,8 @@ resource "aws_batch_compute_environment" "main" {
 
     instance_role = aws_iam_instance_profile.ecs_instance.arn
     instance_type = [
-      "c5.xlarge",
-      "c5.2xlarge"
+      "c5.2xlarge",
+      "c5.4xlarge",
     ]
 
     min_vcpus     = 0
@@ -142,7 +142,7 @@ resource "aws_batch_job_definition" "whisper_transcription" {
       },
       {
         type  = "MEMORY"
-        value = "8192"
+        value = "16384"
       }
     ]
 
