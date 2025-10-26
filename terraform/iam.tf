@@ -88,6 +88,24 @@ resource "aws_iam_role_policy" "ecs_task_batch" {
   })
 }
 
+resource "aws_iam_role_policy" "ecs_task_lambda" {
+  name = "${var.project_name}-ecs-task-lambda-policy"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = aws_lambda_function.whisper_transcription.arn
+      }
+    ]
+  })
+}
+
 # IAM Role for AWS Batch
 resource "aws_iam_role" "batch_service" {
   name = "${var.project_name}-batch-service-role"
@@ -219,4 +237,67 @@ resource "aws_iam_role_policy_attachment" "ecs_instance_cloudwatch" {
 resource "aws_iam_instance_profile" "ecs_instance" {
   name = "${var.project_name}-ecs-instance-profile"
   role = aws_iam_role.ecs_instance.name
+}
+
+# Lambda Execution Role
+resource "aws_iam_role" "lambda_execution" {
+  name = "${var.project_name}-lambda-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-lambda-execution-role"
+    Environment = var.environment
+  }
+}
+
+# Lambda Execution Policy
+resource "aws_iam_role_policy" "lambda_execution" {
+  name = "${var.project_name}-lambda-execution-policy"
+  role = aws_iam_role.lambda_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.audio_files.arn,
+          "${aws_s3_bucket.audio_files.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      }
+    ]
+  })
+}
+
+# Attach basic Lambda execution policy
+resource "aws_iam_role_policy_attachment" "lambda_basic_execution" {
+  role       = aws_iam_role.lambda_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }

@@ -199,6 +199,10 @@ resource "aws_ecs_task_definition" "fastapi" {
       {
         name  = "BATCH_JOB_DEFINITION"
         value = aws_batch_job_definition.whisper_transcription.name
+      },
+      {
+        name  = "LAMBDA_FUNCTION_NAME"
+        value = aws_lambda_function.whisper_transcription.function_name
       }
     ]
 

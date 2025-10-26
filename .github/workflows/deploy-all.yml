@@ -7,6 +7,7 @@ on:
     paths:
       - "terraform/**"
       - "batch-worker/**"
+      - "batch-worker-lambda/**"
       - "fastapi-app/**"
       - ".github/workflows/deploy-all.yml"
       - ".github/workflows/deploy-terraform.yml"
@@ -27,7 +28,7 @@ jobs:
     uses: ./.github/workflows/deploy-terraform.yml
     secrets: inherit
 
-  # Then deploy both services in parallel
+  # Then deploy all services in parallel
   deploy-batch-worker:
     name: Deploy Batch Worker
     needs: terraform
@@ -177,5 +178,60 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Service**: ${{ env.ECS_SERVICE }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Cluster**: ${{ env.ECS_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+
+  deploy-lambda-worker:
+    name: Deploy Lambda Worker
+    needs: terraform
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPOSITORY: whisperx-demo-lambda-worker
+      LAMBDA_FUNCTION_NAME: whisperx-demo-whisper-transcription
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-LambdaWorker-Deploy
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd batch-worker-lambda
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Lambda function with new image
+        env:
+          NEW_IMAGE: ${{ steps.build-image.outputs.image }}
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --image-uri $NEW_IMAGE
+
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+
+      - name: Deployment summary
+        run: |
+          echo "### Lambda Worker Deployment Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Function Name**: ${{ env.LAMBDA_FUNCTION_NAME }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY

@@ -29,6 +29,26 @@ COMPUTE_TYPE = "int8"  # int8 for CPU, float16 for GPU
 # Initialize S3 client
 s3_client = boto3.client("s3", region_name=AWS_REGION)
 
+# Global model cache for Lambda warm starts
+_model_cache = None
+
+
+def get_model():
+    """Get or load Whisper model (cached for warm starts)"""
+    global _model_cache
+    if _model_cache is None:
+        logger.info(f"Loading Whisper model ({MODEL_SIZE}) - First time")
+        _model_cache = WhisperModel(
+            MODEL_SIZE,
+            device=DEVICE,
+            compute_type=COMPUTE_TYPE,
+            cpu_threads=6,
+        )
+        logger.info("Model loaded and cached successfully")
+    else:
+        logger.info("Using cached model (warm start)")
+    return _model_cache
+
 
 def download_audio_from_s3(bucket: str, key: str, local_path: str) -> str:
     """Download audio file from S3"""
@@ -75,13 +95,8 @@ def transcribe_audio(audio_path: str, language: str = "es") -> dict:
 
     try:
         # Load model
-        logger.info(f"Loading Whisper model ({MODEL_SIZE})...")
-        model = WhisperModel(
-            MODEL_SIZE,
-            device=DEVICE,
-            compute_type=COMPUTE_TYPE,
-            cpu_threads=8,
-        )
+
+        model = get_model()
 
         # Transcribe
         logger.info("Transcribing audio...")
@@ -92,6 +107,7 @@ def transcribe_audio(audio_path: str, language: str = "es") -> dict:
             word_timestamps=True,
             vad_filter=True,  # Voice activity detection
             vad_parameters=dict(min_silence_duration_ms=500),
+            batch_size=16,
         )
 
         logger.info(f"Transcription complete. Detected language: {info.language}")
@@ -239,6 +255,20 @@ def main():
         logger.error(f"Transcription job failed: {str(e)}")
         logger.error("=" * 80)
         sys.exit(1)
+
+
+def handler(event, context):
+    """Lambda handler - wrapper for main()"""
+    try:
+        main()
+        return {"statusCode": 200, "body": "Success"}
+    except SystemExit as e:
+        if e.code == 0:
+            return {"statusCode": 200, "body": "Success"}
+        else:
+            return {"statusCode": 500, "body": f"Failed with exit code {e.code}"}
+    except Exception as e:
+        return {"statusCode": 500, "body": str(e)}
 
 
 if __name__ == "__main__":

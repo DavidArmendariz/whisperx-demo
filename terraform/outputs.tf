@@ -27,3 +27,19 @@ output "batch_job_definition_arn" {
   description = "ARN of the Batch job definition"
   value       = aws_batch_job_definition.whisper_transcription.arn
 }
+
+# Lambda outputs
+output "lambda_function_name" {
+  description = "Name of the Lambda function"
+  value       = aws_lambda_function.whisper_transcription.function_name
+}
+
+output "lambda_function_arn" {
+  description = "ARN of the Lambda function"
+  value       = aws_lambda_function.whisper_transcription.arn
+}
+
+output "lambda_ecr_repository_url" {
+  description = "URL of the ECR repository for Lambda worker"
+  value       = aws_ecr_repository.lambda_worker.repository_url
+}

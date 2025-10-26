@@ -1,0 +1,109 @@
+name: Deploy Lambda Batch Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "batch-worker-lambda/**"
+      - ".github/workflows/deploy-batch-worker-lambda.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy-lambda-worker:
+    name: Deploy Lambda Worker
+    runs-on: ubuntu-latest
+    env:
+      ECR_REPOSITORY: whisperx-demo-lambda-worker
+      LAMBDA_FUNCTION_NAME: whisperx-demo-whisper-transcription
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-LambdaWorker-Deploy
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd batch-worker-lambda
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Lambda function with new image
+        id: update-lambda
+        env:
+          NEW_IMAGE: ${{ steps.build-image.outputs.image }}
+        run: |
+          echo "Updating Lambda function with image: $NEW_IMAGE"
+
+          # Update Lambda function code
+          aws lambda update-function-code \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --image-uri $NEW_IMAGE
+
+          # Wait for update to complete
+          echo "Waiting for Lambda function update to complete..."
+          aws lambda wait function-updated \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }}
+
+          echo "Lambda function updated successfully"
+
+      - name: Test Lambda function
+        id: test-lambda
+        run: |
+          echo "Testing Lambda function..."
+
+          # Create test payload
+          cat > test-payload.json << 'EOF'
+          {
+            "S3_INPUT_KEY": "test/sample.wav",
+            "S3_OUTPUT_KEY": "test/output.json",
+            "TARGET_LANGUAGE": "es",
+            "JOB_ID": "test-${{ github.sha }}"
+          }
+          EOF
+
+          # Invoke Lambda function (dry run - won't process real audio)
+          aws lambda invoke \
+            --function-name ${{ env.LAMBDA_FUNCTION_NAME }} \
+            --payload file://test-payload.json \
+            --cli-binary-format raw-in-base64-out \
+            response.json
+
+          echo "Lambda function test completed"
+          cat response.json
+
+      - name: Deployment summary
+        run: |
+          echo "### Lambda Worker Deployment Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Function Name**: ${{ env.LAMBDA_FUNCTION_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ steps.build-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.AWS_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment Status**: ${{ steps.update-lambda.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Lambda function has been updated with the new container image." >> $GITHUB_STEP_SUMMARY
