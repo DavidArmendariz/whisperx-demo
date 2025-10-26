@@ -1,12 +1,6 @@
 name: Deploy Lambda Batch Worker
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "batch-worker-lambda/**"
-      - ".github/workflows/deploy-batch-worker-lambda.yml"
   workflow_dispatch:
 
 env:
