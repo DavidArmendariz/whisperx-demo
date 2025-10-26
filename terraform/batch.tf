@@ -138,7 +138,7 @@ resource "aws_batch_job_definition" "whisper_transcription" {
     resourceRequirements = [
       {
         type  = "VCPU"
-        value = "4"
+        value = "8"
       },
       {
         type  = "MEMORY"
