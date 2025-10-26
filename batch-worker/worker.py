@@ -80,7 +80,7 @@ def transcribe_audio(audio_path: str, language: str = "es") -> dict:
             MODEL_SIZE,
             device=DEVICE,
             compute_type=COMPUTE_TYPE,
-            cpu_threads=8,  # Use all 8 CPU cores
+            cpu_threads=1,  # Use all 8 CPU cores
         )
 
         # Transcribe

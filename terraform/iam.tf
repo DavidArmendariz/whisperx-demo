@@ -210,6 +210,12 @@ resource "aws_iam_role_policy_attachment" "ecs_instance" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
 }
 
+# Attach CloudWatch Agent policy for Container Insights
+resource "aws_iam_role_policy_attachment" "ecs_instance_cloudwatch" {
+  role       = aws_iam_role.ecs_instance.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
 resource "aws_iam_instance_profile" "ecs_instance" {
   name = "${var.project_name}-ecs-instance-profile"
   role = aws_iam_role.ecs_instance.name
