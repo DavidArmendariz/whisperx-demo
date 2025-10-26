@@ -107,7 +107,6 @@ def transcribe_audio(audio_path: str, language: str = "es") -> dict:
             word_timestamps=True,
             vad_filter=True,  # Voice activity detection
             vad_parameters=dict(min_silence_duration_ms=500),
-            batch_size=16,
         )
 
         logger.info(f"Transcription complete. Detected language: {info.language}")

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Install AWS Lambda Runtime Interface Client
 RUN pip install --no-cache-dir awslambdaric
