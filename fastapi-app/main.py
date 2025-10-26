@@ -35,7 +35,7 @@ async def filter_health_check_logs(request: Request, call_next):
 
 
 # AWS configuration
-AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 BATCH_JOB_QUEUE = os.getenv("BATCH_JOB_QUEUE")
 BATCH_JOB_DEFINITION = os.getenv("BATCH_JOB_DEFINITION")

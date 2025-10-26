@@ -14,12 +14,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # AWS configuration
-AWS_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-S3_INPUT_KEY = os.getenv("S3_INPUT_KEY")
-S3_OUTPUT_KEY = os.getenv("S3_OUTPUT_KEY")
-TARGET_LANGUAGE = os.getenv("TARGET_LANGUAGE", "es")
-JOB_ID = os.getenv("JOB_ID", "unknown")
 
 # Faster-Whisper configuration
 MODEL_SIZE = "small"  # small, medium, large-v2, large-v3
@@ -66,12 +62,16 @@ def upload_transcription_to_s3(bucket: str, key: str, transcription_data: dict):
     """Upload transcription results to S3"""
     logger.info(f"Uploading transcription to S3: s3://{bucket}/{key}")
     try:
+        # Get job_id and language from the transcription data if available
+        job_id = transcription_data.get("job_id", "unknown")
+        language = transcription_data.get("language", "unknown")
+
         s3_client.put_object(
             Bucket=bucket,
             Key=key,
             Body=json.dumps(transcription_data, indent=2, ensure_ascii=False),
             ContentType="application/json",
-            Metadata={"job-id": JOB_ID, "language": TARGET_LANGUAGE},
+            Metadata={"job-id": str(job_id), "language": str(language)},
         )
         logger.info("Transcription uploaded successfully")
     except Exception as e:
@@ -187,58 +187,66 @@ def format_transcription_output(result: dict, metadata: dict) -> dict:
     }
 
 
-def main():
+def main(
+    s3_input_key: str,
+    s3_output_key: str,
+    target_language: str = "es",
+    job_id: str = "unknown",
+):
     """Main execution function"""
     logger.info("=" * 80)
     logger.info("Starting WhisperX Transcription Job")
-    logger.info(f"Job ID: {JOB_ID}")
+    logger.info(f"Job ID: {job_id}")
     logger.info(f"S3 Bucket: {S3_BUCKET_NAME}")
-    logger.info(f"S3 Input Key: {S3_INPUT_KEY}")
-    logger.info(f"S3 Output Key: {S3_OUTPUT_KEY}")
-    logger.info(f"Target Language: {TARGET_LANGUAGE}")
+    logger.info(f"S3 Input Key: {s3_input_key}")
+    logger.info(f"S3 Output Key: {s3_output_key}")
+    logger.info(f"Target Language: {target_language}")
     logger.info(f"Device: {DEVICE}")
     logger.info("=" * 80)
 
     # Validate environment variables
-    if not all([S3_BUCKET_NAME, S3_INPUT_KEY, S3_OUTPUT_KEY]):
-        logger.error("Missing required environment variables")
+    if not all([S3_BUCKET_NAME, s3_input_key, s3_output_key]):
+        logger.error("Missing required environment variables or parameters")
         logger.error(f"S3_BUCKET_NAME: {S3_BUCKET_NAME}")
-        logger.error(f"S3_INPUT_KEY: {S3_INPUT_KEY}")
-        logger.error(f"S3_OUTPUT_KEY: {S3_OUTPUT_KEY}")
+        logger.error(f"s3_input_key: {s3_input_key}")
+        logger.error(f"s3_output_key: {s3_output_key}")
         sys.exit(1)
+
+    # Convert to strings for type safety (guaranteed to be non-None after validation)
+    s3_bucket_name = str(S3_BUCKET_NAME)
 
     # Create temp directory for audio file
     temp_dir = Path("/tmp/whisperx")
     temp_dir.mkdir(exist_ok=True)
 
     # Extract filename from S3 key
-    input_filename = Path(S3_INPUT_KEY).name
+    input_filename = Path(s3_input_key).name
     local_audio_path = str(temp_dir / input_filename)
 
     try:
         # Download audio from S3
-        download_audio_from_s3(S3_BUCKET_NAME, S3_INPUT_KEY, local_audio_path)
+        download_audio_from_s3(s3_bucket_name, s3_input_key, local_audio_path)
 
         # Transcribe audio
-        transcription_result = transcribe_audio(local_audio_path, TARGET_LANGUAGE)
+        transcription_result = transcribe_audio(local_audio_path, target_language)
 
         # Format output
         metadata = {
-            "job_id": JOB_ID,
-            "language": TARGET_LANGUAGE,
+            "job_id": job_id,
+            "language": target_language,
             "device": DEVICE,
-            "s3_input_key": S3_INPUT_KEY,
-            "s3_output_key": S3_OUTPUT_KEY,
+            "s3_input_key": s3_input_key,
+            "s3_output_key": s3_output_key,
         }
 
         formatted_output = format_transcription_output(transcription_result, metadata)
 
         # Upload results to S3
-        upload_transcription_to_s3(S3_BUCKET_NAME, S3_OUTPUT_KEY, formatted_output)
+        upload_transcription_to_s3(s3_bucket_name, s3_output_key, formatted_output)
 
         logger.info("=" * 80)
         logger.info("Transcription job completed successfully")
-        logger.info(f"Results uploaded to: s3://{S3_BUCKET_NAME}/{S3_OUTPUT_KEY}")
+        logger.info(f"Results uploaded to: s3://{s3_bucket_name}/{s3_output_key}")
         logger.info("=" * 80)
 
         # Clean up local file
@@ -260,7 +268,28 @@ def main():
 def handler(event, context):
     """Lambda handler - wrapper for main()"""
     try:
-        main()
+        # For Lambda execution, get parameters from event payload
+        if not event:
+            return {"statusCode": 400, "body": "No event data provided"}
+
+        s3_input_key = event.get("s3_input_key")
+        s3_output_key = event.get("s3_output_key")
+        target_language = event.get("target_language", "es")
+        job_id = event.get("job_id", "unknown")
+
+        if not s3_input_key or not s3_output_key:
+            return {
+                "statusCode": 400,
+                "body": "Missing required parameters: s3_input_key, s3_output_key",
+            }
+
+        logger.info("Lambda invocation - parameters from event:")
+        logger.info(f"s3_input_key: {s3_input_key}")
+        logger.info(f"s3_output_key: {s3_output_key}")
+        logger.info(f"target_language: {target_language}")
+        logger.info(f"job_id: {job_id}")
+
+        main(s3_input_key, s3_output_key, target_language, job_id)
         return {"statusCode": 200, "body": "Success"}
     except SystemExit as e:
         if e.code == 0:
@@ -268,8 +297,15 @@ def handler(event, context):
         else:
             return {"statusCode": 500, "body": f"Failed with exit code {e.code}"}
     except Exception as e:
+        logger.error(f"Lambda handler error: {str(e)}")
         return {"statusCode": 500, "body": str(e)}
 
 
 if __name__ == "__main__":
-    main()
+    # For local testing only
+    test_s3_input_key = "input/test/sample.mp3"
+    test_s3_output_key = "output/test/transcription.json"
+    test_target_language = "es"
+    test_job_id = "test-job"
+
+    main(test_s3_input_key, test_s3_output_key, test_target_language, test_job_id)

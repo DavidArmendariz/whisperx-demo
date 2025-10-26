@@ -59,7 +59,6 @@ resource "aws_lambda_function" "whisper_transcription" {
 
   environment {
     variables = {
-      AWS_DEFAULT_REGION = var.aws_region
       S3_BUCKET_NAME     = aws_s3_bucket.audio_files.id
       TARGET_LANGUAGE    = "es"
       HF_HOME            = "/tmp/huggingface"

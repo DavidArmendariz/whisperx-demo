@@ -185,10 +185,6 @@ resource "aws_ecs_task_definition" "fastapi" {
 
     environment = [
       {
-        name  = "AWS_DEFAULT_REGION"
-        value = var.aws_region
-      },
-      {
         name  = "S3_BUCKET_NAME"
         value = aws_s3_bucket.audio_files.id
       },
