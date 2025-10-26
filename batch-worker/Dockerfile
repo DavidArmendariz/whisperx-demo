@@ -1,27 +1,32 @@
-# Use NVIDIA CUDA base image for GPU support
-FROM nvidia/cuda:13.0.1-cudnn-runtime-ubuntu24.04
+FROM ubuntu:22.04
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
+# Instalar Python y dependencias
 RUN apt-get update && apt-get install -y \
-  python3 \
+  python3.11 \
   python3-pip \
   ffmpeg \
-  git \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
+# Instalar AWS Lambda Runtime Interface Client
+RUN pip install awslambdaric
+
+# Copiar requirements y instalar
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy worker script
-COPY worker.py .
+# Descargar el modelo de Whisper durante el build
+RUN python3 -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1
-ENV CUDA_VISIBLE_DEVICES=0
+# Copiar código
+COPY worker.py /var/task/
 
-# Run the worker
-CMD ["python3", "worker.py"]
+WORKDIR /var/task
+
+# Configurar cache de Hugging Face para usar /tmp
+ENV HF_HOME=/tmp/huggingface
+ENV TRANSFORMERS_CACHE=/tmp/huggingface
+ENV XDG_CACHE_HOME=/tmp
+
+# Entry point para Lambda
+ENTRYPOINT ["python3", "-m", "awslambdaric"]
+CMD ["worker.handler"]
