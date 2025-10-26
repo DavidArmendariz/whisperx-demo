@@ -40,7 +40,7 @@ def get_model():
                 device=DEVICE,
                 compute_type=COMPUTE_TYPE,
                 cpu_threads=4,  # Reduced from 6 to 4 for Lambda
-                download_root="/opt/huggingface",  # Use build-time cache
+                download_root="/opt/huggingface",  # Lambda layer provides model here
             )
             logger.info("Model loaded and cached successfully")
         except Exception as e:

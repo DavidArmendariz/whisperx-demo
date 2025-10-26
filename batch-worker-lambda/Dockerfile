@@ -7,16 +7,7 @@ RUN pip install --no-cache-dir awslambdaric
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set cache directories BEFORE downloading model
-ENV HF_HOME=/opt/huggingface
-ENV TRANSFORMERS_CACHE=/opt/huggingface
-ENV XDG_CACHE_HOME=/opt
-
-# Create cache directory and download the Whisper model during build
-RUN mkdir -p /opt/huggingface
-RUN python -c "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')"
-
-# Copiar código
+# Copy application code
 COPY worker.py /var/task/
 
 WORKDIR /var/task

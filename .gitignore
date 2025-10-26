@@ -41,3 +41,7 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# Lambda layer build artifacts
+lambda-layer/output/*
+!lambda-layer/output/whisper-model-layer.zip

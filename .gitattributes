@@ -1,0 +1,1 @@
+lambda-layer/output/whisper-model-layer.zip filter=lfs diff=lfs merge=lfs -text

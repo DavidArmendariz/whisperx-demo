@@ -46,6 +46,18 @@ resource "aws_cloudwatch_log_group" "lambda_worker" {
   }
 }
 
+# Lambda Layer for Whisper Model
+# Build the layer locally using: cd lambda-layer && ./build_layer.sh
+resource "aws_lambda_layer_version" "whisper_model" {
+  filename         = "../lambda-layer/output/whisper-model-layer.zip"
+  layer_name       = "${var.project_name}-whisper-model"
+  source_code_hash = filebase64sha256("../lambda-layer/output/whisper-model-layer.zip")
+
+  compatible_runtimes = ["python3.12"]
+
+  description = "Faster-Whisper small model pre-downloaded for faster Lambda initialization"
+}
+
 # Lambda Function
 resource "aws_lambda_function" "whisper_transcription" {
   function_name = "${var.project_name}-whisper-transcription"
@@ -57,13 +69,16 @@ resource "aws_lambda_function" "whisper_transcription" {
   timeout     = 900   # 15 minutes (max for Lambda)
   memory_size = 10240 # Maximum memory for maximum CPU allocation
 
+  # Attach the Lambda layer with the pre-downloaded model
+  layers = [aws_lambda_layer_version.whisper_model.arn]
+
   environment {
     variables = {
       S3_BUCKET_NAME     = aws_s3_bucket.audio_files.id
       TARGET_LANGUAGE    = "es"
-      HF_HOME            = "/tmp/huggingface"
-      TRANSFORMERS_CACHE = "/tmp/huggingface"
-      XDG_CACHE_HOME     = "/tmp"
+      HF_HOME            = "/opt/huggingface" # Model location from Lambda layer
+      TRANSFORMERS_CACHE = "/opt/huggingface" # Model location from Lambda layer
+      XDG_CACHE_HOME     = "/opt"
     }
   }
 
