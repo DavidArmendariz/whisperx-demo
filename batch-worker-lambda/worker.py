@@ -34,13 +34,18 @@ def get_model():
     global _model_cache
     if _model_cache is None:
         logger.info(f"Loading Whisper model ({MODEL_SIZE}) - First time")
-        _model_cache = WhisperModel(
-            MODEL_SIZE,
-            device=DEVICE,
-            compute_type=COMPUTE_TYPE,
-            cpu_threads=6,
-        )
-        logger.info("Model loaded and cached successfully")
+        try:
+            _model_cache = WhisperModel(
+                MODEL_SIZE,
+                device=DEVICE,
+                compute_type=COMPUTE_TYPE,
+                cpu_threads=4,  # Reduced from 6 to 4 for Lambda
+                download_root="/opt/huggingface",  # Use build-time cache
+            )
+            logger.info("Model loaded and cached successfully")
+        except Exception as e:
+            logger.error(f"Failed to load model: {str(e)}")
+            raise
     else:
         logger.info("Using cached model (warm start)")
     return _model_cache
@@ -287,6 +292,11 @@ def handler(event, context):
         logger.info(f"s3_output_key: {s3_output_key}")
         logger.info(f"target_language: {target_language}")
         logger.info(f"job_id: {job_id}")
+
+        # Pre-load model to check if it causes timeout
+        logger.info("Pre-loading model to avoid timeout during transcription...")
+        get_model()  # Pre-load the model
+        logger.info("Model pre-loaded successfully")
 
         main(s3_input_key, s3_output_key, target_language, job_id)
         return {"statusCode": 200, "body": "Success"}
