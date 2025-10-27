@@ -43,3 +43,18 @@ output "lambda_ecr_repository_url" {
   description = "URL of the ECR repository for Lambda worker"
   value       = aws_ecr_repository.lambda_worker.repository_url
 }
+
+output "efs_file_system_id" {
+  description = "ID of the EFS file system for model storage"
+  value       = aws_efs_file_system.model_storage.id
+}
+
+output "efs_access_point_id" {
+  description = "ID of the EFS access point for Lambda"
+  value       = aws_efs_access_point.lambda_model_access.id
+}
+
+output "efs_mount_command" {
+  description = "Command to mount EFS on EC2 instance"
+  value       = "sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${aws_efs_mount_target.model_storage[0].ip_address}:/ /mnt/efs"
+}

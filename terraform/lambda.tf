@@ -46,19 +46,31 @@ resource "aws_cloudwatch_log_group" "lambda_worker" {
   }
 }
 
-# Lambda Layer for Whisper Model
-# Build the layer locally using: cd lambda-layer && ./build_layer.sh
-resource "aws_lambda_layer_version" "whisper_model" {
-  filename         = "../lambda-layer/output/whisper-model-layer.zip"
-  layer_name       = "${var.project_name}-whisper-model"
-  source_code_hash = filebase64sha256("../lambda-layer/output/whisper-model-layer.zip")
+# Security Group for Lambda
+resource "aws_security_group" "lambda_transcription" {
+  name_prefix = "${var.project_name}-lambda-transcription-"
+  description = "Security group for Lambda transcription function"
+  vpc_id      = aws_vpc.main.id
 
-  compatible_runtimes = ["python3.12"]
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-  description = "Faster-Whisper small model pre-downloaded for faster Lambda initialization"
+  tags = {
+    Name        = "${var.project_name}-lambda-transcription-sg"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# Lambda Function
+# Lambda Function (updated)
 resource "aws_lambda_function" "whisper_transcription" {
   function_name = "${var.project_name}-whisper-transcription"
   role          = aws_iam_role.lambda_execution.arn
@@ -66,25 +78,35 @@ resource "aws_lambda_function" "whisper_transcription" {
   package_type = "Image"
   image_uri    = "${aws_ecr_repository.lambda_worker.repository_url}:latest"
 
-  timeout     = 900   # 15 minutes (max for Lambda)
-  memory_size = 10240 # Maximum memory for maximum CPU allocation
+  timeout     = 900   # 15 minutes
+  memory_size = 10240 # Maximum memory
 
-  # Attach the Lambda layer with the pre-downloaded model
-  layers = [aws_lambda_layer_version.whisper_model.arn]
+  # VPC Configuration for EFS access
+  vpc_config {
+    subnet_ids         = aws_subnet.private[*].id
+    security_group_ids = [aws_security_group.lambda_transcription.id]
+  }
+
+  # EFS Mount Configuration
+  file_system_config {
+    arn              = aws_efs_access_point.lambda_model_access.arn
+    local_mount_path = "/mnt/efs"
+  }
 
   environment {
     variables = {
       S3_BUCKET_NAME     = aws_s3_bucket.audio_files.id
       TARGET_LANGUAGE    = "es"
-      HF_HOME            = "/opt/huggingface" # Model location from Lambda layer
-      TRANSFORMERS_CACHE = "/opt/huggingface" # Model location from Lambda layer
-      XDG_CACHE_HOME     = "/opt"
+      MODEL_PATH         = "/mnt/efs/models" # Model location from EFS
+      HF_HOME            = "/mnt/efs/cache"  # Hugging Face cache
+      TRANSFORMERS_CACHE = "/mnt/efs/cache"
     }
   }
 
   depends_on = [
     aws_iam_role_policy_attachment.lambda_basic_execution,
     aws_cloudwatch_log_group.lambda_worker,
+    aws_efs_mount_target.model_storage
   ]
 
   tags = {

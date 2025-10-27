@@ -262,7 +262,7 @@ resource "aws_iam_role" "lambda_execution" {
   }
 }
 
-# Lambda Execution Policy
+# Lambda Execution Policy (updated with EFS permissions)
 resource "aws_iam_role_policy" "lambda_execution" {
   name = "${var.project_name}-lambda-execution-policy"
   role = aws_iam_role.lambda_execution.id
@@ -291,6 +291,26 @@ resource "aws_iam_role_policy" "lambda_execution" {
           "logs:PutLogEvents"
         ]
         Resource = "arn:aws:logs:${var.aws_region}:*:*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface",
+          "ec2:AssignPrivateIpAddresses",
+          "ec2:UnassignPrivateIpAddresses"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "elasticfilesystem:ClientMount",
+          "elasticfilesystem:ClientWrite",
+          "elasticfilesystem:DescribeMountTargets"
+        ]
+        Resource = aws_efs_file_system.model_storage.arn
       }
     ]
   })

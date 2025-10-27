@@ -399,3 +399,76 @@ For issues and questions:
 ---
 
 **Built with ❤️ using AWS, Terraform, and open-source tools**
+
+---
+
+# WhisperX Audio Transcription Service - lamda
+
+---
+
+# in batch-worker
+
+````
+```bash
+docker build -t whisperx-batch-worker .
+docker images whisperx-batch-worker
+````
+
+# Create lambda from terminal
+
+```bash
+aws ecr create-repository \
+  --repository-name whisperx-batch-worker \
+  --region us-east-1
+
+# Login de Docker en ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 761018890099.dkr.ecr.us-east-1.amazonaws.com
+
+#Tag and Push the Docker image
+docker tag whisperx-batch-worker:latest 761018890099.dkr.ecr.us-east-1.amazonaws.com/whisperx-batch-worker:latest
+docker push 761018890099.dkr.ecr.us-east-1.amazonaws.com/whisperx-batch-worker:latest
+
+```
+
+# Crear archivo de política de confianza
+
+```bash
+cat > trust-policy.json << 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# Crear el rol
+aws iam create-role \
+  --role-name lambda-whisperx-role \
+  --assume-role-policy-document file://trust-policy.json
+
+# Adjuntar política básica de ejecución
+aws iam attach-role-policy \
+  --role-name lambda-whisperx-role \
+  --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+# Adjuntar acceso a S3 (si lo necesitas)
+aws iam attach-role-policy \
+  --role-name lambda-whisperx-role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+```
+
+# verificar el estado
+
+```bash
+aws lambda get-function --function-name whisperx-batch-worker --query 'Configuration.State'
+
+# Ver toda la configuración
+aws lambda get-function --function-name whisperx-batch-worker
+```

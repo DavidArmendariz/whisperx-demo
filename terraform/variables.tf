@@ -51,3 +51,15 @@ variable "batch_max_vcpus" {
   type        = number
   default     = 16
 }
+
+variable "efs_performance_mode" {
+  description = "EFS performance mode"
+  type        = string
+  default     = "generalPurpose"
+}
+
+variable "efs_throughput_mode" {
+  description = "EFS throughput mode"
+  type        = string
+  default     = "bursting"
+}
