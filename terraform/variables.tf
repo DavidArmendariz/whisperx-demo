@@ -52,6 +52,12 @@ variable "batch_max_vcpus" {
   default     = 16
 }
 
+variable "batch_gpu_max_vcpus" {
+  description = "Maximum vCPUs for GPU Batch compute environment"
+  type        = number
+  default     = 8
+}
+
 variable "efs_performance_mode" {
   description = "EFS performance mode"
   type        = string
