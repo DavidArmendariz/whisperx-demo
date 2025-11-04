@@ -13,9 +13,12 @@ resource "aws_batch_compute_environment" "gpu" {
       "g5.xlarge"    # A10G (if available)
     ]
 
-    min_vcpus     = 0
-    desired_vcpus = 0
-    max_vcpus     = var.batch_gpu_max_vcpus
+  min_vcpus     = 0
+  # Set desired_vcpus to 1 so Batch will attempt to launch at least one GPU instance
+  # and move RUNNABLE jobs to STARTING. This helps when the compute environment
+  # is idle and we want to trigger scale-up immediately.
+  desired_vcpus = 1
+  max_vcpus     = var.batch_gpu_max_vcpus
 
     subnets            = aws_subnet.private[*].id
     security_group_ids = [aws_security_group.batch.id]

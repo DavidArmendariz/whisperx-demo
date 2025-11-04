@@ -226,7 +226,7 @@ resource "aws_instance" "efs_init" {
   user_data = local.efs_init_user_data
 
   root_block_device {
-    volume_size = 20
+    volume_size = 40
     volume_type = "gp3"
     encrypted   = true
   }
